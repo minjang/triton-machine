@@ -167,6 +167,10 @@ public:
   LogicalResult
   matchAndRewrite(SourceOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    // TODO: Don't promote to vector of size 1?
+    bool isForCPU = triton::gpu::isCPUMode();
+    int vecLength = 0;
+
     auto resultTy = op.getType();
     Location loc = op->getLoc();
     // element type
@@ -186,7 +190,9 @@ public:
     SmallVector<Value> resultVals;
     for (auto it = allOperands.begin(), end = allOperands.end(); it != end;) {
       auto curr = static_cast<const ConcreteT *>(this)->createDestOps(
-          op, adaptor, rewriter, elemTy, MultipleOperandsRange(it, end), loc);
+          op, adaptor, rewriter,
+          vecLength > 0 ? LLVM::getVectorType(elemTy, vecLength) : elemTy,
+          MultipleOperandsRange(it, end), loc);
       if (curr.size() == 0)
         return failure();
       for (auto v : curr) {

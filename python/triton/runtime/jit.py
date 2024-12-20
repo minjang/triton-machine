@@ -555,7 +555,7 @@ class JITFunction(KernelInterface[T]):
             # attributes
             attrvals = [x[1] for x in specialization]
             attrs = find_paths_if(attrvals, lambda _, x: isinstance(x, str))
-            attrs = {k: backend.parse_attr(get_iterable_path(attrvals, k)) for k in attrs}
+            attrs = {k: backend.parse_attr(get_iterable_path(attrvals, k), options) for k in attrs}
             if self._call_hook(key, signature, device, constexprs, options, [attrs], warmup, before=True):
                 return None
             # compile the kernel

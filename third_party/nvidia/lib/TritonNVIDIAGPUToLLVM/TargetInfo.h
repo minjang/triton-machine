@@ -7,8 +7,9 @@ namespace mlir::triton::NVIDIA {
 
 class TargetInfo : public mlir::triton::TargetInfoBase {
 public:
-  TargetInfo(int computeCapability, int ptxVersion)
-      : computeCapability(computeCapability), ptxVersion(ptxVersion) {}
+  TargetInfo(int computeCapability, int ptxVersion, bool cpuMode)
+      : computeCapability(computeCapability), ptxVersion(ptxVersion),
+        cpuMode(cpuMode) {}
 
   bool supportMaximumMinimum() const override;
 
@@ -64,9 +65,12 @@ public:
 
   int getPtxVersion() const { return ptxVersion; }
 
+  bool isCPUMode() const override { return cpuMode; }
+
 private:
   int computeCapability;
   int ptxVersion;
+  bool cpuMode;
 };
 
 } // namespace mlir::triton::NVIDIA

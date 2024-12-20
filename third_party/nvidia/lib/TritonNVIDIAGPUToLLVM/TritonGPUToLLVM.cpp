@@ -57,13 +57,32 @@ public:
   explicit TritonLLVMConversionTarget(MLIRContext &ctx)
       : ConversionTarget(ctx) {
     addLegalDialect<LLVM::LLVMDialect>();
-    addLegalDialect<NVVM::NVVMDialect>();
     addLegalDialect<mlir::triton::nvgpu::NVGPUDialect>();
     addIllegalDialect<triton::TritonDialect>();
     addIllegalDialect<triton::gpu::TritonGPUDialect>();
     addIllegalDialect<triton::nvidia_gpu::TritonNvidiaGPUDialect>();
     addIllegalDialect<mlir::gpu::GPUDialect>();
     addLegalOp<mlir::UnrealizedConversionCastOp>();
+    if (!triton::gpu::isCPUMode())
+      addLegalDialect<NVVM::NVVMDialect>();
+    else
+      addIllegalDialect<NVVM::NVVMDialect>();
+  }
+};
+
+// Copied from the CPU fork.
+struct CPUBarrierOpConversion
+    : public ConvertOpToLLVMPattern<mlir::gpu::BarrierOp> {
+  using BarrierOp = mlir::gpu::BarrierOp;
+  explicit CPUBarrierOpConversion(LLVMTypeConverter &typeConverter)
+      : mlir::ConvertOpToLLVMPattern<BarrierOp>(typeConverter) {}
+
+  LogicalResult
+  matchAndRewrite(BarrierOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Just make it a no-op for now
+    rewriter.eraseOp(op);
+    return success();
   }
 };
 
@@ -82,13 +101,19 @@ struct ConvertTritonGPUToLLVM
   ConvertTritonGPUToLLVM(int32_t computeCapability, int32_t ptxVersion)
       : ConvertTritonGPUToLLVMBase({computeCapability, ptxVersion}) {}
 
+  ConvertTritonGPUToLLVM(int32_t computeCapability, int32_t ptxVersion,
+                         bool cpuMode)
+      : ConvertTritonGPUToLLVMBase({computeCapability, ptxVersion, cpuMode}) {}
+
   void runOnOperation() override {
     MLIRContext *context = &getContext();
     ModuleOp mod = getOperation();
 
+    triton::gpu::setCPUMode(cpuMode);
+
     mlir::LowerToLLVMOptions option(context);
     option.overrideIndexBitwidth(32);
-    TargetInfo targetInfo(computeCapability, ptxVersion);
+    TargetInfo targetInfo(computeCapability, ptxVersion, cpuMode);
     TritonGPUToLLVMTypeConverter typeConverter(context, option, targetInfo);
     TritonLLVMConversionTarget convTarget(*context);
     int numWarps = triton::gpu::TritonGPUDialect::getNumWarps(mod);
@@ -96,9 +121,11 @@ struct ConvertTritonGPUToLLVM
     int threadsPerWarp = triton::gpu::TritonGPUDialect::getThreadsPerWarp(mod);
 
     // Allocate shared memory and set barrier
-    ModuleAllocation allocation(mod);
-    ModuleMembarAnalysis membarPass(&allocation, NVIDIA::canSkipBarSync);
-    membarPass.run();
+    if (!triton::gpu::isCPUMode()) {
+      ModuleAllocation allocation(mod);
+      ModuleMembarAnalysis membarPass(&allocation, NVIDIA::canSkipBarSync);
+      membarPass.run();
+    }
 
     // Lower functions
     {
@@ -119,7 +146,8 @@ struct ConvertTritonGPUToLLVM
     // initSharedMemory is run before the conversion of call and ret ops,
     // because the call op has to know the shared memory base address of each
     // function
-    initSharedMemory(typeConverter);
+    if (!cpuMode)
+      initSharedMemory(typeConverter);
     ModuleAxisInfoAnalysis axisInfoAnalysis(mod);
     OpBuilder::InsertPoint indexInsertPoint;
 
@@ -144,7 +172,10 @@ struct ConvertTritonGPUToLLVM
                                                targetInfo, benefit);
     mlir::triton::populateGatherOpToLLVMPatterns(typeConverter, patterns,
                                                  targetInfo, benefit);
-    populateBarrierOpToLLVMPatterns(typeConverter, patterns, benefit);
+    if (!cpuMode)
+      populateBarrierOpToLLVMPatterns(typeConverter, patterns, benefit);
+    else
+      patterns.add<CPUBarrierOpConversion>(typeConverter);
     populateTensorPtrOpsToLLVMPatterns(typeConverter, patterns, benefit);
     populateClusterOpsToLLVMPatterns(typeConverter, patterns, benefit);
     mlir::triton::populateHistogramOpToLLVMPatterns(typeConverter, patterns,
@@ -236,6 +267,10 @@ createConvertTritonGPUToLLVMPass(int32_t computeCapability,
                                  int32_t ptxVersion) {
   return std::make_unique<ConvertTritonGPUToLLVM>(computeCapability,
                                                   ptxVersion);
+}
+std::unique_ptr<OperationPass<ModuleOp>>
+createConvertTritonGPUToLLVMPassForCPU() {
+  return std::make_unique<ConvertTritonGPUToLLVM>(0, 0, true);
 }
 
 bool NVIDIA::canSkipBarSync(Operation *before, Operation *after) {

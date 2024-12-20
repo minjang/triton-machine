@@ -27,6 +27,12 @@ def ConvertTritonGPUToLLVM : Pass<"convert-triton-gpu-to-llvm", "mlir::ModuleOp"
         Option<"ptxVersion", "ptx-version",
                "int32_t", /*default*/"80",
                "PTX version">,
+
+        // This is a temporary option to enable the experimental CPU mode on
+        // top of the GPUToLLVM lowering.
+        Option<"cpuMode", "cpu-mode",
+                "bool", /*default*/"false",
+                "experimental cpu mode">,
     ];
 }
 

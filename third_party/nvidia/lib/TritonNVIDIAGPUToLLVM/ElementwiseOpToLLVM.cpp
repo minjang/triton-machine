@@ -566,6 +566,11 @@ struct FDivOpConversion
                                    ConversionPatternRewriter &rewriter,
                                    Type elemTy, MultipleOperandsRange operands,
                                    Location loc) const {
+    if (triton::gpu::isCPUMode()) {
+      return {rewriter.create<LLVM::FDivOp>(loc, elemTy, operands[0][0],
+                                            operands[0][1])};
+    }
+
     PTXBuilder ptxBuilder;
     auto &fdiv = *ptxBuilder.create<PTXInstr>("div");
     unsigned bitwidth = elemTy.getIntOrFloatBitWidth();
@@ -787,6 +792,11 @@ struct ExpOpConversionApprox
                                    ConversionPatternRewriter &rewriter,
                                    Type elemTy, MultipleOperandsRange operands,
                                    Location loc) const {
+    if (triton::gpu::isCPUMode()) {
+      // TODO: Call libmvec for CPU.
+      return {rewriter.create<LLVM::ExpOp>(loc, elemTy, operands[0][0])};
+    }
+
     // For non-FP32 input, call __nv_expf for higher-precision calculation
     if (elemTy.getIntOrFloatBitWidth() != 32)
       return {};

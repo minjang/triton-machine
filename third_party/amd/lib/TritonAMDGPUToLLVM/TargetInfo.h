@@ -68,6 +68,8 @@ public:
 
   bool supportVectorizedAtomics() const override;
 
+  bool isCPUMode() const override { return false; }
+
 private:
   void printfImpl(Value formatStrStart, int formatStrByteCount, ValueRange args,
                   RewriterBase &rewriter, bool useStdErr) const;

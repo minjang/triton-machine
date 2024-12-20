@@ -85,11 +85,13 @@ class BaseBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @staticmethod
-    def parse_attr(desc):
+    def parse_attr(desc, options):
         assert isinstance(desc, str)
         ret = []
         if "D" in desc:
-            ret += [["tt.divisibility", 16]]
+            # divisibility limits the maximum vectorization length.
+            # For CPU, we give a sufficiently high number.
+            ret += [["tt.divisibility", options.__dict__.get("divisibility", 16)]]
         return ret
 
     @staticmethod
